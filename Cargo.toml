@@ -284,6 +284,10 @@ category = "3D Rendering"
 wasm = true
 
 [[example]]
+name = "debug_3d_primitives"
+path = "examples/3d/debug_3d_primitives.rs"
+
+[[example]]
 name = "lighting"
 path = "examples/3d/lighting.rs"
 
