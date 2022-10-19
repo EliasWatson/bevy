@@ -3,7 +3,10 @@
 use std::f32::consts::PI;
 
 use bevy::{
-    pbr::wireframe::{Wireframe, WireframePlugin},
+    pbr::{
+        wireframe::{Wireframe, WireframePlugin},
+        NotShadowCaster, NotShadowReceiver,
+    },
     prelude::*,
     render::{
         primitives::Aabb,
@@ -13,14 +16,8 @@ use bevy::{
 
 fn main() {
     App::new()
-        .insert_resource(ImageSettings::default_nearest())
-        .insert_resource(WgpuSettings {
-            features: WgpuFeatures::POLYGON_MODE_LINE,
-            ..default()
-        })
         .add_plugins(DefaultPlugins)
-        .add_plugin(WireframePlugin)
-        // .add_plugin(DebugPrimitivesPlugin)
+        .add_plugin(DebugPrimitivesPlugin)
         .add_startup_system(setup)
         .add_system(rotate)
         .run();
@@ -64,7 +61,6 @@ fn setup(
                 ..default()
             },
             Shape,
-            Wireframe,
         ));
     }
 
@@ -103,16 +99,83 @@ struct DebugPrimitivesPlugin;
 
 impl Plugin for DebugPrimitivesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup_debug_primitives);
+        app.insert_resource(WgpuSettings {
+            features: WgpuFeatures::POLYGON_MODE_LINE,
+            ..default()
+        })
+        .add_plugin(WireframePlugin)
+        .add_system(add_aabb_debug_primitives)
+        .add_system(update_aabb_debug_primitives);
     }
 }
 
-fn setup_debug_primitives(mut meshes: ResMut<Assets<Mesh>>) {
-    todo!()
-}
+#[derive(Component, Debug)]
+struct DebugPrimitive(Entity);
 
-fn debug_draw_primitives(aabb_query: Query<&Aabb>) {
-    for aabb in &aabb_query {
-        todo!()
+#[derive(Component, Debug)]
+struct DebugPrimitiveParent;
+
+fn add_aabb_debug_primitives(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    aabb_query: Query<
+        Entity,
+        (
+            With<Aabb>,
+            Without<DebugPrimitive>,
+            Without<DebugPrimitiveParent>,
+        ),
+    >,
+) {
+    for parent_entity in &aabb_query {
+        commands
+            .spawn(PbrBundle {
+                mesh: meshes.add(shape::Cube::default().into()),
+                material: materials.add(StandardMaterial {
+                    base_color: Color::rgba(0.0, 0.0, 0.0, 0.0),
+                    alpha_mode: AlphaMode::Mask(0.5),
+                    double_sided: true,
+                    cull_mode: None,
+                    unlit: true,
+                    ..default()
+                }),
+                ..default()
+            })
+            .insert(NotShadowCaster)
+            .insert(NotShadowReceiver)
+            .insert(Wireframe)
+            .insert(DebugPrimitive(parent_entity));
+
+        commands.entity(parent_entity).insert(DebugPrimitiveParent);
     }
 }
+
+fn update_aabb_debug_primitives(
+    mut commands: Commands,
+    mut debug_primitive_query: Query<(Entity, &DebugPrimitive, &mut Transform)>,
+    aabb_query: Query<(&Aabb, &GlobalTransform), With<DebugPrimitiveParent>>,
+) {
+    for (debug_primitive_entity, debug_primitive, mut transform) in &mut debug_primitive_query {
+        let (aabb, aabb_transform) = match aabb_query.get(debug_primitive.0) {
+            Ok(x) => x,
+            Err(_) => {
+                commands.entity(debug_primitive_entity).despawn_recursive();
+                continue;
+            }
+        };
+
+        let (aabb_scale, aabb_rotation, aabb_translation) =
+            aabb_transform.to_scale_rotation_translation();
+
+        transform.translation = aabb_translation + Vec3::from(aabb.center);
+        transform.scale = aabb_scale * Vec3::from(aabb.half_extents * 2.0);
+        transform.rotation = aabb_rotation;
+    }
+}
+
+// fn debug_draw_primitives(aabb_query: Query<&Aabb>) {
+//     for aabb in &aabb_query {
+//         // todo!()
+//     }
+// }
