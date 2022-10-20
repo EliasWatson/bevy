@@ -104,9 +104,16 @@ impl Plugin for DebugPrimitivesPlugin {
             ..default()
         })
         .add_plugin(WireframePlugin)
+        .init_resource::<DebugPrimitivesConfig>()
         .add_system(add_aabb_debug_primitives)
-        .add_system(update_aabb_debug_primitives);
+        .add_system(update_aabb_debug_primitives)
+        .add_system(toggle_visibility);
     }
+}
+
+#[derive(Resource, Debug)]
+pub struct DebugPrimitivesConfig {
+    pub is_visible: bool,
 }
 
 #[derive(Component, Debug)]
@@ -119,6 +126,7 @@ fn add_aabb_debug_primitives(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    config: Res<DebugPrimitivesConfig>,
     aabb_query: Query<
         Entity,
         (
@@ -144,6 +152,9 @@ fn add_aabb_debug_primitives(
             })
             .insert(NotShadowCaster)
             .insert(NotShadowReceiver)
+            .insert(Visibility {
+                is_visible: config.is_visible,
+            })
             .insert(Wireframe)
             .insert(DebugPrimitive(parent_entity));
 
@@ -153,10 +164,15 @@ fn add_aabb_debug_primitives(
 
 fn update_aabb_debug_primitives(
     mut commands: Commands,
-    mut debug_primitive_query: Query<(Entity, &DebugPrimitive, &mut Transform)>,
+    config: Res<DebugPrimitivesConfig>,
+    mut debug_primitive_query: Query<(Entity, &DebugPrimitive, &mut Transform, &mut Visibility)>,
     aabb_query: Query<(&Aabb, &GlobalTransform), With<DebugPrimitiveParent>>,
 ) {
-    for (debug_primitive_entity, debug_primitive, mut transform) in &mut debug_primitive_query {
+    for (debug_primitive_entity, debug_primitive, mut transform, mut visibility) in
+        &mut debug_primitive_query
+    {
+        visibility.is_visible = config.is_visible;
+
         let (aabb, aabb_transform) = match aabb_query.get(debug_primitive.0) {
             Ok(x) => x,
             Err(_) => {
@@ -174,8 +190,17 @@ fn update_aabb_debug_primitives(
     }
 }
 
-// fn debug_draw_primitives(aabb_query: Query<&Aabb>) {
-//     for aabb in &aabb_query {
-//         // todo!()
-//     }
-// }
+fn toggle_visibility(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut config: ResMut<DebugPrimitivesConfig>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        config.is_visible = !config.is_visible;
+    }
+}
+
+impl Default for DebugPrimitivesConfig {
+    fn default() -> Self {
+        Self { is_visible: true }
+    }
+}
